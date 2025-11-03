@@ -1,63 +1,82 @@
-import { useState } from 'react';
-import { Toaster, toast } from 'react-hot-toast';
-
-import SearchBar from '../SearchBar/SearchBar';
-import MovieGrid from '../MovieGrid/MovieGrid';
-import Loader from '../Loader/Loader';
-import ErrorMessage from '../ErrorMessage/ErrorMessage';
-import MovieModal from '../MovieModal/MovieModal';
-
-import { fetchMovies } from '../../services/movieService';
-import type { Movie } from '../../types/movie';
-
-import styles from './App.module.css';
+import SearchBar from "../SearchBar/SearchBar"; 
+import css from "./App.module.css";
+import { fetchMovies } from "../../services/movieService";
+import { useEffect, useState } from "react";
+import type { Movie } from "../../types/movie";
+import toast, { Toaster } from "react-hot-toast";
+import { MovieGrid } from "../MovieGrid/MovieGrid";
+import Loader from "../Loader/Loader";
+import ErrorMessage from "../ErrorMessage/ErrorMessage";
+import MovieModal from "../MovieModal/MovieModal";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import ReactPaginate from "react-paginate";
 
 export default function App() {
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [movie, setMovie] = useState<Movie | null>(null);
+  const [query, setQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const handleSearch = async (query: string) => {
-    setMovies([]);
-    setError(false);
-    setLoading(true);
+  const { data, isLoading, isError, isSuccess } = useQuery({
+    queryKey: ["movies", query, currentPage],
+    queryFn: () => fetchMovies(query, currentPage),
+    enabled: query.trim().length > 0,
+    placeholderData: keepPreviousData,
+  });
 
-    try {
-      const results = await fetchMovies(query);
-      if (results.length === 0) {
-        toast('No movies found for your request.');
-      }
-      setMovies(results);
-    } 
-   catch (err) {
-  console.error( err);
-  setError(true);}
- finally {
-      setLoading(false);
+  useEffect(() => {
+    if (data && data.results.length === 0) {
+      toast.error("No movies found for your request.");
     }
+  }, [data]);
+
+  const openModal = () => setIsModalOpen(true);
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setMovie(null);
+  };
+  const onSelect = (m: Movie) => {
+    setMovie(m);
+    openModal();
   };
 
-  const handleSelect = (movie: Movie) => {
-    setSelectedMovie(movie);
-  };
-
-  const handleClose = () => {
-    setSelectedMovie(null);
+  const handleMovie = (q: string) => {
+    setQuery(q);
+    setCurrentPage(1);
   };
 
   return (
-    <div className={styles.app}>
-      <SearchBar onSubmit={handleSearch} />
-      {loading && <Loader />}
-      {error && <ErrorMessage />}
-      {!loading && !error && movies.length > 0 && (
-        <MovieGrid movies={movies} onSelect={handleSelect} />
+    <div className={css.app}>
+      <Toaster position="top-center" reverseOrder={false} />
+
+      <SearchBar onSubmit={handleMovie} />
+
+      {isSuccess && data.total_pages > 1 && (
+        <ReactPaginate
+          pageCount={data.total_pages}
+          pageRangeDisplayed={5}
+          marginPagesDisplayed={1}
+          onPageChange={({ selected }: { selected: number }) =>
+            setCurrentPage(selected + 1)
+          } 
+          forcePage={currentPage - 1}
+          containerClassName={css.pagination}
+          activeClassName={css.active}
+          nextLabel="→"
+          previousLabel="←"
+        />
       )}
-      {selectedMovie && (
-        <MovieModal movie={selectedMovie} onClose={handleClose} />
+
+      {isLoading && <Loader />}
+      {isError && <ErrorMessage />}
+
+      {data && data.results.length > 0 && (
+        <MovieGrid movies={data.results} onSelect={onSelect} />
       )}
-      <Toaster position="top-right" />
+
+      {isModalOpen && movie && (
+        <MovieModal onClose={closeModal} movie={movie} />
+      )}
     </div>
   );
 }
